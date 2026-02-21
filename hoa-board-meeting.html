@@ -1,0 +1,1025 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>HOA Board Meeting System</title>
+<style>
+  /* ===== BASE ===== */
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+  :root {
+    --primary: #1a3a5c;
+    --primary-light: #2d5f8a;
+    --accent: #c8a84b;
+    --danger: #c0392b;
+    --success: #27ae60;
+    --warn: #e67e22;
+    --bg: #f4f6f9;
+    --card: #ffffff;
+    --border: #dde3ec;
+    --text: #2c3e50;
+    --muted: #6c7a89;
+    --radius: 6px;
+  }
+  body { font-family: 'Segoe UI', system-ui, sans-serif; background: var(--bg); color: var(--text); font-size: 14px; line-height: 1.5; }
+
+  /* ===== LAYOUT ===== */
+  #app { max-width: 1100px; margin: 0 auto; padding: 20px; }
+  .top-bar { background: var(--primary); color: #fff; border-radius: var(--radius); padding: 16px 24px; display: flex; align-items: center; justify-content: space-between; margin-bottom: 20px; }
+  .top-bar h1 { font-size: 18px; font-weight: 600; letter-spacing: .3px; }
+  .top-bar .org-name { font-size: 13px; opacity: .8; margin-top: 2px; }
+  .top-bar-actions { display: flex; gap: 8px; }
+  .tabs { display: flex; gap: 4px; margin-bottom: 20px; border-bottom: 2px solid var(--border); }
+  .tab { padding: 9px 18px; border: none; background: none; cursor: pointer; font-size: 14px; color: var(--muted); border-bottom: 3px solid transparent; margin-bottom: -2px; border-radius: var(--radius) var(--radius) 0 0; transition: all .15s; font-weight: 500; }
+  .tab:hover { color: var(--primary); background: #eef2f7; }
+  .tab.active { color: var(--primary); border-bottom-color: var(--primary); font-weight: 600; }
+  .tab-panel { display: none; }
+  .tab-panel.active { display: block; }
+  .card { background: var(--card); border: 1px solid var(--border); border-radius: var(--radius); padding: 20px; margin-bottom: 16px; }
+  .card-title { font-size: 13px; font-weight: 700; text-transform: uppercase; letter-spacing: .6px; color: var(--primary); margin-bottom: 14px; display: flex; align-items: center; gap: 8px; }
+  .section-divider { border: none; border-top: 1px solid var(--border); margin: 16px 0; }
+
+  /* ===== BUTTONS ===== */
+  .btn { display: inline-flex; align-items: center; gap: 5px; padding: 7px 14px; border-radius: var(--radius); border: none; cursor: pointer; font-size: 13px; font-weight: 500; transition: all .15s; }
+  .btn-primary { background: var(--primary); color: #fff; }
+  .btn-primary:hover { background: var(--primary-light); }
+  .btn-accent { background: var(--accent); color: #fff; }
+  .btn-accent:hover { background: #b8973a; }
+  .btn-success { background: var(--success); color: #fff; }
+  .btn-success:hover { background: #219a52; }
+  .btn-danger { background: var(--danger); color: #fff; }
+  .btn-danger:hover { background: #a93226; }
+  .btn-ghost { background: transparent; color: var(--primary); border: 1px solid var(--border); }
+  .btn-ghost:hover { background: #eef2f7; }
+  .btn-sm { padding: 4px 10px; font-size: 12px; }
+  .btn-icon { padding: 5px 8px; }
+
+  /* ===== FORMS ===== */
+  .form-row { display: flex; gap: 12px; margin-bottom: 12px; flex-wrap: wrap; }
+  .form-group { display: flex; flex-direction: column; gap: 4px; flex: 1; min-width: 140px; }
+  .form-group label { font-size: 12px; font-weight: 600; color: var(--muted); text-transform: uppercase; letter-spacing: .4px; }
+  input[type=text], input[type=time], input[type=date], select, textarea {
+    padding: 8px 10px; border: 1px solid var(--border); border-radius: var(--radius); font-size: 14px; font-family: inherit; color: var(--text); background: #fff; width: 100%;
+  }
+  input:focus, select:focus, textarea:focus { outline: none; border-color: var(--primary); box-shadow: 0 0 0 3px rgba(26,58,92,.1); }
+  textarea { resize: vertical; min-height: 70px; }
+
+  /* ===== MEETING HEADER ===== */
+  .meeting-meta { display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 12px; }
+
+  /* ===== ATTENDANCE ===== */
+  .member-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(200px, 1fr)); gap: 10px; }
+  .member-card { border: 1px solid var(--border); border-radius: var(--radius); padding: 12px; background: #fafbfc; transition: border-color .15s; }
+  .member-card.present { border-color: var(--success); background: #f0faf4; }
+  .member-card.absent { border-color: #e0e0e0; background: #fafafa; opacity: .7; }
+  .member-card.late { border-color: var(--warn); background: #fef9f0; }
+  .member-card.departed { border-color: #9b59b6; background: #faf0ff; }
+  .member-name { font-weight: 600; font-size: 13px; margin-bottom: 2px; }
+  .member-role { font-size: 11px; color: var(--muted); margin-bottom: 8px; }
+  .member-status-btns { display: flex; gap: 4px; flex-wrap: wrap; margin-bottom: 6px; }
+  .status-btn { padding: 3px 8px; border: 1px solid var(--border); border-radius: 12px; font-size: 11px; cursor: pointer; background: #fff; transition: all .15s; }
+  .status-btn.active-present { background: var(--success); color: #fff; border-color: var(--success); }
+  .status-btn.active-absent { background: #95a5a6; color: #fff; border-color: #95a5a6; }
+  .status-btn.active-late { background: var(--warn); color: #fff; border-color: var(--warn); }
+  .status-btn.active-departed { background: #9b59b6; color: #fff; border-color: #9b59b6; }
+  .member-time { display: flex; gap: 6px; margin-top: 4px; }
+  .member-time input { font-size: 12px; padding: 4px 6px; flex: 1; }
+  .member-time label { font-size: 10px; color: var(--muted); }
+
+  /* ===== AGENDA ===== */
+  .agenda-item { border: 1px solid var(--border); border-radius: var(--radius); padding: 12px 14px; margin-bottom: 8px; background: #fafbfc; display: flex; align-items: flex-start; gap: 10px; }
+  .agenda-item.recurring-tag::before { content: '↻'; color: var(--accent); font-size: 13px; margin-right: 2px; }
+  .agenda-num { font-weight: 700; color: var(--primary); min-width: 24px; font-size: 13px; }
+  .agenda-content { flex: 1; }
+  .agenda-title-row { display: flex; align-items: center; gap: 8px; }
+  .agenda-title { font-weight: 600; font-size: 13px; }
+  .agenda-type { font-size: 11px; padding: 2px 7px; border-radius: 10px; background: #eef2f7; color: var(--muted); }
+  .agenda-notes { font-size: 12px; color: var(--muted); margin-top: 3px; }
+  .agenda-actions { display: flex; gap: 4px; margin-left: auto; }
+  .badge { display: inline-block; font-size: 10px; padding: 2px 7px; border-radius: 10px; font-weight: 600; }
+  .badge-recurring { background: #fef3d0; color: #8a6a00; }
+
+  /* ===== DISCUSSION ===== */
+  .discussion-item { border: 1px solid var(--border); border-radius: var(--radius); margin-bottom: 12px; overflow: hidden; }
+  .discussion-header { background: var(--primary); color: #fff; padding: 10px 14px; display: flex; align-items: center; gap: 10px; cursor: pointer; }
+  .discussion-header .disc-num { font-weight: 700; font-size: 13px; opacity: .8; }
+  .discussion-header .disc-title { font-weight: 600; font-size: 14px; flex: 1; }
+  .discussion-header .disc-time { font-size: 12px; opacity: .7; }
+  .discussion-body { padding: 14px; }
+  .discussion-notes-area { width: 100%; margin-bottom: 10px; }
+
+  /* ===== MOTIONS ===== */
+  .motions-section { background: #f8f9ff; border: 1px solid #d0d8f0; border-radius: var(--radius); padding: 12px; margin-top: 10px; }
+  .motions-title { font-size: 12px; font-weight: 700; color: var(--primary); margin-bottom: 8px; text-transform: uppercase; letter-spacing: .4px; }
+  .motion-item { background: #fff; border: 1px solid #d0d8f0; border-radius: var(--radius); padding: 10px 12px; margin-bottom: 8px; }
+  .motion-text-row { display: flex; gap: 8px; margin-bottom: 8px; }
+  .motion-text-row input { flex: 1; }
+  .motion-text-row select { width: 130px; }
+  .vote-row { display: flex; gap: 6px; align-items: center; flex-wrap: wrap; }
+  .vote-row label { font-size: 12px; color: var(--muted); font-weight: 500; }
+  .vote-input { width: 52px !important; text-align: center; }
+  .motion-result { display: flex; gap: 6px; margin-top: 8px; }
+  .result-btn { padding: 4px 12px; border-radius: 12px; border: 1px solid var(--border); font-size: 12px; cursor: pointer; background: #fff; font-weight: 600; }
+  .result-btn.active-passed { background: var(--success); color: #fff; border-color: var(--success); }
+  .result-btn.active-failed { background: var(--danger); color: #fff; border-color: var(--danger); }
+  .result-btn.active-tabled { background: var(--warn); color: #fff; border-color: var(--warn); }
+
+  /* ===== ACTION ITEMS ===== */
+  .action-item { display: flex; gap: 10px; align-items: flex-start; border: 1px solid var(--border); border-radius: var(--radius); padding: 10px 12px; margin-bottom: 8px; background: #fffef8; }
+  .action-item input[type=checkbox] { margin-top: 3px; width: 16px; height: 16px; cursor: pointer; }
+  .action-item.done { opacity: .6; }
+  .action-content { flex: 1; display: flex; gap: 8px; flex-wrap: wrap; }
+  .action-content input { flex: 1; min-width: 120px; }
+  .action-content select { width: 150px; }
+
+  /* ===== ROSTER MGMT ===== */
+  .roster-table { width: 100%; border-collapse: collapse; }
+  .roster-table th { background: var(--primary); color: #fff; padding: 9px 12px; text-align: left; font-size: 12px; font-weight: 600; letter-spacing: .3px; }
+  .roster-table td { padding: 8px 12px; border-bottom: 1px solid var(--border); font-size: 13px; }
+  .roster-table tr:hover td { background: #f5f7fa; }
+  .roster-table input, .roster-table select { padding: 5px 8px; border: 1px solid var(--border); border-radius: 4px; font-size: 13px; width: 100%; }
+
+  /* ===== MINUTES PREVIEW ===== */
+  #minutes-preview { background: #fff; border: 1px solid var(--border); border-radius: var(--radius); padding: 40px; font-family: Georgia, 'Times New Roman', serif; color: #222; line-height: 1.7; }
+  #minutes-preview .min-org { text-align: center; font-size: 20px; font-weight: 700; text-transform: uppercase; letter-spacing: 1px; margin-bottom: 4px; color: #1a1a1a; }
+  #minutes-preview .min-doc-title { text-align: center; font-size: 15px; font-weight: 600; margin-bottom: 4px; color: #333; }
+  #minutes-preview .min-meta { text-align: center; font-size: 13px; color: #555; margin-bottom: 6px; }
+  #minutes-preview .min-divider { border: none; border-top: 2px solid #1a3a5c; margin: 16px 0; }
+  #minutes-preview .min-divider-thin { border: none; border-top: 1px solid #ccc; margin: 12px 0; }
+  #minutes-preview .min-section { margin-bottom: 20px; }
+  #minutes-preview .min-section-title { font-size: 13px; font-weight: 700; text-transform: uppercase; letter-spacing: .8px; color: #1a3a5c; margin-bottom: 8px; border-bottom: 1px solid #dde3ec; padding-bottom: 4px; }
+  #minutes-preview .min-attendance-grid { display: grid; grid-template-columns: repeat(2, 1fr); gap: 4px 30px; }
+  #minutes-preview .min-attendance-row { font-size: 13px; display: flex; justify-content: space-between; }
+  #minutes-preview .min-attendance-name { font-weight: 600; }
+  #minutes-preview .min-attendance-note { color: #666; font-style: italic; font-size: 12px; }
+  #minutes-preview .min-agenda-item { margin-bottom: 14px; }
+  #minutes-preview .min-agenda-title { font-weight: 700; font-size: 14px; margin-bottom: 4px; }
+  #minutes-preview .min-agenda-notes { font-size: 13px; color: #333; margin-left: 12px; }
+  #minutes-preview .min-motion { background: #f8f9ff; border-left: 3px solid #1a3a5c; padding: 8px 12px; margin: 8px 0 8px 12px; border-radius: 0 4px 4px 0; }
+  #minutes-preview .min-motion-text { font-weight: 600; font-size: 13px; }
+  #minutes-preview .min-motion-vote { font-size: 12px; color: #555; margin-top: 3px; }
+  #minutes-preview .min-motion-result { display: inline-block; font-size: 11px; font-weight: 700; padding: 2px 8px; border-radius: 10px; margin-top: 4px; }
+  #minutes-preview .result-passed { background: #d4edda; color: #155724; }
+  #minutes-preview .result-failed { background: #f8d7da; color: #721c24; }
+  #minutes-preview .result-tabled { background: #fff3cd; color: #856404; }
+  #minutes-preview .min-action-item { font-size: 13px; margin-bottom: 4px; display: flex; gap: 8px; }
+  #minutes-preview .min-action-item::before { content: '▸'; color: #1a3a5c; }
+  #minutes-preview .min-sig-block { margin-top: 40px; display: grid; grid-template-columns: 1fr 1fr; gap: 40px; }
+  #minutes-preview .min-sig-line { border-top: 1px solid #333; padding-top: 6px; font-size: 12px; color: #555; margin-top: 40px; }
+  #minutes-preview .min-footer { text-align: center; font-size: 11px; color: #999; margin-top: 30px; font-style: italic; }
+
+  /* ===== UTILITIES ===== */
+  .flex { display: flex; }
+  .gap-8 { gap: 8px; }
+  .gap-12 { gap: 12px; }
+  .ml-auto { margin-left: auto; }
+  .mt-8 { margin-top: 8px; }
+  .mt-12 { margin-top: 12px; }
+  .text-muted { color: var(--muted); font-size: 12px; }
+  .empty-state { text-align: center; padding: 30px; color: var(--muted); font-size: 13px; }
+
+  /* ===== PRINT ===== */
+  @media print {
+    body { background: #fff; font-size: 12pt; }
+    #app > *:not(#print-area) { display: none !important; }
+    #print-area { display: block !important; }
+    #minutes-preview { border: none; padding: 0; box-shadow: none; }
+    .no-print { display: none !important; }
+    @page { margin: 1in; size: letter; }
+  }
+
+  /* ===== CLOCK ===== */
+  .clock { font-size: 22px; font-weight: 700; font-variant-numeric: tabular-nums; letter-spacing: 1px; color: var(--accent); }
+</style>
+</head>
+<body>
+<div id="app">
+
+  <!-- TOP BAR -->
+  <div class="top-bar">
+    <div>
+      <div class="org-name" id="display-org-name">Homeowners Association</div>
+      <h1>Board Meeting Management</h1>
+    </div>
+    <div style="display:flex;align-items:center;gap:16px;">
+      <div class="clock" id="live-clock">--:--:--</div>
+      <div class="top-bar-actions">
+        <button class="btn btn-ghost btn-sm" onclick="saveData()">💾 Save</button>
+        <button class="btn btn-ghost btn-sm" onclick="loadData()">📂 Load</button>
+        <button class="btn btn-accent btn-sm" onclick="printMinutes()">🖨 Print Minutes</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- TABS -->
+  <div class="tabs">
+    <button class="tab active" onclick="showTab('setup')">⚙ Setup</button>
+    <button class="tab" onclick="showTab('attendance')">👥 Attendance</button>
+    <button class="tab" onclick="showTab('agenda')">📋 Agenda</button>
+    <button class="tab" onclick="showTab('discussion')">💬 Discussion</button>
+    <button class="tab" onclick="showTab('actions')">✅ Action Items</button>
+    <button class="tab" onclick="showTab('minutes')">📄 Minutes</button>
+  </div>
+
+  <!-- SETUP TAB -->
+  <div id="tab-setup" class="tab-panel active">
+    <div class="card">
+      <div class="card-title">🏘 Organization Settings</div>
+      <div class="form-row">
+        <div class="form-group">
+          <label>HOA Name</label>
+          <input type="text" id="org-name" placeholder="e.g. Maple Grove HOA" oninput="updateOrgDisplay()">
+        </div>
+        <div class="form-group">
+          <label>Meeting Location</label>
+          <input type="text" id="meeting-location" placeholder="e.g. Community Clubhouse">
+        </div>
+      </div>
+    </div>
+
+    <div class="card">
+      <div class="card-title">📅 Meeting Information</div>
+      <div class="meeting-meta">
+        <div class="form-group">
+          <label>Meeting Date</label>
+          <input type="date" id="meeting-date">
+        </div>
+        <div class="form-group">
+          <label>Called to Order</label>
+          <input type="time" id="time-called">
+        </div>
+        <div class="form-group">
+          <label>Adjourned</label>
+          <input type="time" id="time-adjourned">
+        </div>
+        <div class="form-group">
+          <label>Meeting Type</label>
+          <select id="meeting-type">
+            <option>Regular Board Meeting</option>
+            <option>Special Board Meeting</option>
+            <option>Annual Meeting</option>
+            <option>Executive Session</option>
+          </select>
+        </div>
+      </div>
+      <div class="form-row mt-8">
+        <div class="form-group">
+          <label>Location / Address</label>
+          <input type="text" id="meeting-address" placeholder="Full address or venue name">
+        </div>
+      </div>
+    </div>
+
+    <div class="card">
+      <div class="card-title">👥 Board Roster</div>
+      <table class="roster-table" id="roster-table">
+        <thead>
+          <tr>
+            <th>Name</th>
+            <th>Role / Title</th>
+            <th style="width:80px">Actions</th>
+          </tr>
+        </thead>
+        <tbody id="roster-body"></tbody>
+      </table>
+      <div class="mt-8">
+        <button class="btn btn-primary btn-sm" onclick="addRosterMember()">+ Add Board Member</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- ATTENDANCE TAB -->
+  <div id="tab-attendance" class="tab-panel">
+    <div class="card">
+      <div class="card-title" style="justify-content:space-between;">
+        <span>👥 Board Member Attendance</span>
+        <div class="flex gap-8">
+          <button class="btn btn-success btn-sm" onclick="markAll('present')">All Present</button>
+          <button class="btn btn-ghost btn-sm" onclick="stampNow('time-called')">⏱ Stamp Call to Order</button>
+        </div>
+      </div>
+      <div class="member-grid" id="attendance-grid">
+        <div class="empty-state">No board members added yet. Go to Setup → Board Roster.</div>
+      </div>
+    </div>
+
+    <div class="card">
+      <div class="card-title">📝 Additional Attendees</div>
+      <div class="form-group">
+        <label>Guests / Residents / Staff Present</label>
+        <textarea id="additional-attendees" placeholder="List names or describe (e.g. 5 residents, Jane Smith - Property Manager)"></textarea>
+      </div>
+    </div>
+  </div>
+
+  <!-- AGENDA TAB -->
+  <div id="tab-agenda" class="tab-panel">
+    <div class="card">
+      <div class="card-title" style="justify-content:space-between;">
+        <span>📋 Meeting Agenda</span>
+        <div class="flex gap-8">
+          <button class="btn btn-ghost btn-sm" onclick="loadRecurringAgenda()">↻ Load Recurring Items</button>
+          <button class="btn btn-primary btn-sm" onclick="addAgendaItem()">+ Add Item</button>
+        </div>
+      </div>
+      <div id="agenda-list">
+        <div class="empty-state">No agenda items yet. Click "Load Recurring Items" or "Add Item".</div>
+      </div>
+    </div>
+  </div>
+
+  <!-- DISCUSSION TAB -->
+  <div id="tab-discussion" class="tab-panel">
+    <div class="card" style="padding:14px 20px;">
+      <div style="display:flex;align-items:center;justify-content:space-between;">
+        <div class="card-title" style="margin:0;">💬 Meeting Discussion</div>
+        <div class="flex gap-8">
+          <button class="btn btn-ghost btn-sm" onclick="importAgendaToDiscussion()">← Import from Agenda</button>
+          <button class="btn btn-primary btn-sm" onclick="addDiscussionItem()">+ Add Discussion Item</button>
+        </div>
+      </div>
+    </div>
+    <div id="discussion-list">
+      <div class="empty-state card">No discussion items. Import from agenda or add manually.</div>
+    </div>
+  </div>
+
+  <!-- ACTION ITEMS TAB -->
+  <div id="tab-actions" class="tab-panel">
+    <div class="card">
+      <div class="card-title" style="justify-content:space-between;">
+        <span>✅ Action Items & Follow-ups</span>
+        <button class="btn btn-primary btn-sm" onclick="addActionItem()">+ Add Action Item</button>
+      </div>
+      <div id="action-items-list">
+        <div class="empty-state">No action items yet.</div>
+      </div>
+    </div>
+  </div>
+
+  <!-- MINUTES TAB -->
+  <div id="tab-minutes" class="tab-panel">
+    <div class="card no-print" style="padding:12px 20px;">
+      <div style="display:flex;gap:8px;align-items:center;">
+        <button class="btn btn-primary" onclick="generateMinutes()">🔄 Generate Minutes</button>
+        <button class="btn btn-accent" onclick="printMinutes()">🖨 Print / Export PDF</button>
+        <span class="text-muted ml-auto">Generated minutes can be edited directly below before printing.</span>
+      </div>
+    </div>
+    <div id="print-area">
+      <div id="minutes-preview">
+        <div class="empty-state" style="font-family:sans-serif;">Click "Generate Minutes" to compile your meeting data.</div>
+      </div>
+    </div>
+  </div>
+
+</div><!-- #app -->
+
+<script>
+<script src="hoa-board-meeting.js"></script>
+    const today = new Date().toISOString().split('T')[0];
+    state.meetingDate = today;
+    document.getElementById('meeting-date').value = today;
+  }
+});
+
+function startClock() {
+  function tick() {
+    const now = new Date();
+    document.getElementById('live-clock').textContent =
+      now.toLocaleTimeString('en-US', { hour12: false });
+  }
+  tick();
+  setInterval(tick, 1000);
+}
+
+// ============================================================
+// TABS
+// ============================================================
+function showTab(name) {
+  document.querySelectorAll('.tab-panel').forEach(p => p.classList.remove('active'));
+  document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
+  document.getElementById('tab-' + name).classList.add('active');
+  event.target.classList.add('active');
+  if (name === 'attendance') renderAttendance();
+  if (name === 'minutes') generateMinutes();
+}
+
+// ============================================================
+// SETUP / ROSTER
+// ============================================================
+function updateOrgDisplay() {
+  const val = document.getElementById('org-name').value;
+  state.orgName = val;
+  document.getElementById('display-org-name').textContent = val || 'Homeowners Association';
+  persist();
+}
+
+function addRosterMember(name='', role='') {
+  const id = 'mbr_' + Date.now() + '_' + Math.random().toString(36).slice(2,6);
+  state.roster.push({ id, name, role });
+  if (!state.attendance[id]) state.attendance[id] = { status: 'present', timeArrived: '', timeDeparted: '' };
+  renderRoster();
+  renderAttendance();
+  persist();
+}
+
+function removeRosterMember(id) {
+  state.roster = state.roster.filter(m => m.id !== id);
+  delete state.attendance[id];
+  renderRoster();
+  renderAttendance();
+  persist();
+}
+
+function renderRoster() {
+  const tbody = document.getElementById('roster-body');
+  if (!state.roster.length) {
+    tbody.innerHTML = '<tr><td colspan="3" class="empty-state" style="padding:16px;">No members added.</td></tr>';
+    return;
+  }
+  tbody.innerHTML = state.roster.map(m => `
+    <tr>
+      <td><input type="text" value="${esc(m.name)}" placeholder="Full Name" oninput="updateRosterField('${m.id}','name',this.value)"></td>
+      <td>
+        <select oninput="updateRosterField('${m.id}','role',this.value)">
+          ${['President','Vice President','Secretary','Treasurer','Director / Member at Large','Property Manager'].map(r =>
+            `<option ${m.role===r?'selected':''}>${r}</option>`
+          ).join('')}
+        </select>
+      </td>
+      <td><button class="btn btn-danger btn-sm btn-icon" onclick="removeRosterMember('${m.id}')">✕</button></td>
+    </tr>
+  `).join('');
+}
+
+function updateRosterField(id, field, value) {
+  const m = state.roster.find(x => x.id === id);
+  if (m) { m[field] = value; persist(); }
+}
+
+// ============================================================
+// ATTENDANCE
+// ============================================================
+function renderAttendance() {
+  const grid = document.getElementById('attendance-grid');
+  if (!state.roster.length) {
+    grid.innerHTML = '<div class="empty-state">No board members added yet. Go to Setup → Board Roster.</div>';
+    return;
+  }
+  grid.innerHTML = state.roster.map(m => {
+    const att = state.attendance[m.id] || { status: 'present', timeArrived: '', timeDeparted: '' };
+    const statuses = ['present','absent','late','departed'];
+    return `
+    <div class="member-card ${att.status}" id="mc_${m.id}">
+      <div class="member-name">${esc(m.name || 'Unnamed')}</div>
+      <div class="member-role">${esc(m.role)}</div>
+      <div class="member-status-btns">
+        ${statuses.map(s => `<button class="status-btn ${att.status===s?'active-'+s:''}" onclick="setAttendance('${m.id}','${s}')">${s.charAt(0).toUpperCase()+s.slice(1)}</button>`).join('')}
+      </div>
+      ${att.status==='late'||att.status==='present' ? `
+      <div class="member-time">
+        <div><label>Arrived</label><input type="time" value="${att.timeArrived||''}" oninput="setAttendanceTime('${m.id}','timeArrived',this.value)"></div>
+        ${att.status!=='late'?'':''}
+      </div>` : ''}
+      ${att.status==='departed' ? `
+      <div class="member-time">
+        <div><label>Departed</label><input type="time" value="${att.timeDeparted||''}" oninput="setAttendanceTime('${m.id}','timeDeparted',this.value)"></div>
+      </div>` : ''}
+    </div>`;
+  }).join('');
+}
+
+function setAttendance(id, status) {
+  if (!state.attendance[id]) state.attendance[id] = {};
+  state.attendance[id].status = status;
+  if (status === 'late' && !state.attendance[id].timeArrived) {
+    state.attendance[id].timeArrived = currentTime();
+  }
+  if (status === 'departed' && !state.attendance[id].timeDeparted) {
+    state.attendance[id].timeDeparted = currentTime();
+  }
+  renderAttendance();
+  persist();
+}
+
+function setAttendanceTime(id, field, value) {
+  if (!state.attendance[id]) state.attendance[id] = {};
+  state.attendance[id][field] = value;
+  persist();
+}
+
+function markAll(status) {
+  state.roster.forEach(m => {
+    if (!state.attendance[m.id]) state.attendance[m.id] = {};
+    state.attendance[m.id].status = status;
+  });
+  renderAttendance();
+  persist();
+}
+
+function stampNow(fieldId) {
+  const field = document.getElementById(fieldId);
+  if (field) { field.value = currentTime(); state.timeCalled = currentTime(); persist(); }
+}
+
+// ============================================================
+// AGENDA
+// ============================================================
+function loadRecurringAgenda() {
+  RECURRING_AGENDA.forEach(item => {
+    if (!state.agenda.find(a => a.title === item.title)) {
+      state.agenda.push({ id: uid(), ...item });
+    }
+  });
+  renderAgenda();
+  persist();
+}
+
+function addAgendaItem() {
+  state.agenda.push({ id: uid(), title: '', type: 'Discussion', notes: '', recurring: false });
+  renderAgenda();
+  persist();
+}
+
+function removeAgendaItem(id) {
+  state.agenda = state.agenda.filter(a => a.id !== id);
+  renderAgenda();
+  persist();
+}
+
+function updateAgendaField(id, field, value) {
+  const item = state.agenda.find(a => a.id === id);
+  if (item) { item[field] = value; persist(); }
+}
+
+function renderAgenda() {
+  const list = document.getElementById('agenda-list');
+  if (!state.agenda.length) {
+    list.innerHTML = '<div class="empty-state">No agenda items yet.</div>';
+    return;
+  }
+  list.innerHTML = state.agenda.map((item, i) => `
+    <div class="agenda-item">
+      <div class="agenda-num">${i+1}.</div>
+      <div class="agenda-content">
+        <div class="agenda-title-row">
+          <input type="text" value="${esc(item.title)}" placeholder="Agenda item title" style="flex:1;font-weight:600;" oninput="updateAgendaField('${item.id}','title',this.value)">
+          <select style="width:140px;" onchange="updateAgendaField('${item.id}','type',this.value)">
+            ${['Discussion','Action','Report','Procedural','Information'].map(t=>`<option ${item.type===t?'selected':''}>${t}</option>`).join('')}
+          </select>
+          ${item.recurring ? '<span class="badge badge-recurring">↻ Recurring</span>' : ''}
+        </div>
+        <input type="text" value="${esc(item.notes)}" placeholder="Notes / description (optional)" style="margin-top:6px;font-size:12px;" oninput="updateAgendaField('${item.id}','notes',this.value)">
+      </div>
+      <div class="agenda-actions">
+        <button class="btn btn-success btn-sm" onclick="sendToDiscussion('${item.id}')">▶ Discuss</button>
+        <button class="btn btn-ghost btn-sm btn-icon" onclick="removeAgendaItem('${item.id}')">✕</button>
+      </div>
+    </div>
+  `).join('');
+}
+
+function sendToDiscussion(agendaId) {
+  const item = state.agenda.find(a => a.id === agendaId);
+  if (!item) return;
+  if (state.discussion.find(d => d.agendaId === agendaId)) {
+    alert('This item is already in the discussion list.');
+    return;
+  }
+  state.discussion.push({
+    id: uid(), agendaId, title: item.title, type: item.type,
+    timeStarted: currentTime(), notes: '', motions: []
+  });
+  renderDiscussion();
+  persist();
+  showTabByName('discussion');
+}
+
+function importAgendaToDiscussion() {
+  let added = 0;
+  state.agenda.forEach(item => {
+    if (!state.discussion.find(d => d.agendaId === item.id)) {
+      state.discussion.push({
+        id: uid(), agendaId: item.id, title: item.title, type: item.type,
+        timeStarted: '', notes: '', motions: []
+      });
+      added++;
+    }
+  });
+  renderDiscussion();
+  persist();
+  if (added) alert(`${added} agenda item(s) imported to discussion.`);
+}
+
+// ============================================================
+// DISCUSSION
+// ============================================================
+function addDiscussionItem() {
+  state.discussion.push({ id: uid(), agendaId: null, title: '', type: 'Discussion', timeStarted: currentTime(), notes: '', motions: [] });
+  renderDiscussion();
+  persist();
+}
+
+function removeDiscussionItem(id) {
+  state.discussion = state.discussion.filter(d => d.id !== id);
+  renderDiscussion();
+  persist();
+}
+
+function updateDiscussionField(id, field, value) {
+  const item = state.discussion.find(d => d.id === id);
+  if (item) { item[field] = value; persist(); }
+}
+
+function addMotion(discId) {
+  const disc = state.discussion.find(d => d.id === discId);
+  if (!disc) return;
+  disc.motions.push({ id: uid(), text: '', movedBy: '', secondedBy: '', yea: '', nay: '', abstain: '', result: '' });
+  renderDiscussion();
+  persist();
+}
+
+function removeMotion(discId, motionId) {
+  const disc = state.discussion.find(d => d.id === discId);
+  if (disc) { disc.motions = disc.motions.filter(m => m.id !== motionId); renderDiscussion(); persist(); }
+}
+
+function updateMotionField(discId, motionId, field, value) {
+  const disc = state.discussion.find(d => d.id === discId);
+  if (!disc) return;
+  const motion = disc.motions.find(m => m.id === motionId);
+  if (motion) { motion[field] = value; persist(); }
+}
+
+function setMotionResult(discId, motionId, result) {
+  const disc = state.discussion.find(d => d.id === discId);
+  if (!disc) return;
+  const motion = disc.motions.find(m => m.id === motionId);
+  if (motion) {
+    motion.result = motion.result === result ? '' : result;
+    renderDiscussion();
+    persist();
+  }
+}
+
+function renderDiscussion() {
+  const list = document.getElementById('discussion-list');
+  if (!state.discussion.length) {
+    list.innerHTML = '<div class="empty-state card">No discussion items. Import from agenda or add manually.</div>';
+    return;
+  }
+  const memberOptions = ['', ...state.roster.map(m => m.name)].map(n => `<option>${esc(n)}</option>`).join('');
+
+  list.innerHTML = state.discussion.map((disc, i) => `
+    <div class="discussion-item">
+      <div class="discussion-header">
+        <span class="disc-num">${i+1}.</span>
+        <input type="text" value="${esc(disc.title)}" placeholder="Discussion topic" style="flex:1;background:transparent;border:none;color:#fff;font-size:14px;font-weight:600;outline:none;" oninput="updateDiscussionField('${disc.id}','title',this.value)">
+        <div style="display:flex;align-items:center;gap:8px;">
+          <span style="font-size:11px;opacity:.7;">Started:</span>
+          <input type="time" value="${disc.timeStarted||''}" style="background:transparent;border:1px solid rgba(255,255,255,.3);color:#fff;border-radius:4px;padding:2px 6px;font-size:12px;" oninput="updateDiscussionField('${disc.id}','timeStarted',this.value)">
+          <button onclick="updateDiscussionField('${disc.id}','timeStarted','${currentTime()}');renderDiscussion();" style="background:rgba(255,255,255,.2);border:none;color:#fff;border-radius:4px;padding:2px 8px;cursor:pointer;font-size:11px;">⏱ Now</button>
+          <button onclick="removeDiscussionItem('${disc.id}')" style="background:rgba(255,0,0,.3);border:none;color:#fff;border-radius:4px;padding:2px 8px;cursor:pointer;font-size:11px;">✕</button>
+        </div>
+      </div>
+      <div class="discussion-body">
+        <textarea class="discussion-notes-area" placeholder="Discussion notes, summary, decisions..." rows="3" oninput="updateDiscussionField('${disc.id}','notes',this.value)">${esc(disc.notes)}</textarea>
+
+        <div class="motions-section">
+          <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:8px;">
+            <div class="motions-title">Motions</div>
+            <button class="btn btn-primary btn-sm" onclick="addMotion('${disc.id}')">+ Add Motion</button>
+          </div>
+          ${disc.motions.length === 0 ? '<div class="text-muted" style="padding:4px 0;">No motions for this item.</div>' : ''}
+          ${disc.motions.map(motion => `
+            <div class="motion-item">
+              <div class="motion-text-row">
+                <input type="text" placeholder="Motion text (e.g. Motion to approve...)" value="${esc(motion.text)}" oninput="updateMotionField('${disc.id}','${motion.id}','text',this.value)" style="flex:1;">
+                <button class="btn btn-danger btn-sm btn-icon" onclick="removeMotion('${disc.id}','${motion.id}')">✕</button>
+              </div>
+              <div class="vote-row">
+                <label>Moved by:</label>
+                <select style="width:140px;" onchange="updateMotionField('${disc.id}','${motion.id}','movedBy',this.value)">
+                  ${state.roster.map(m=>`<option ${motion.movedBy===m.name?'selected':''}>${esc(m.name)}</option>`).join('')}
+                  <option ${!motion.movedBy?'selected':''} value="">-- Select --</option>
+                </select>
+                <label>Seconded by:</label>
+                <select style="width:140px;" onchange="updateMotionField('${disc.id}','${motion.id}','secondedBy',this.value)">
+                  <option value="">-- Select --</option>
+                  ${state.roster.map(m=>`<option ${motion.secondedBy===m.name?'selected':''}>${esc(m.name)}</option>`).join('')}
+                </select>
+                <label>Yea:</label><input class="vote-input" type="text" value="${esc(motion.yea)}" placeholder="0" oninput="updateMotionField('${disc.id}','${motion.id}','yea',this.value)">
+                <label>Nay:</label><input class="vote-input" type="text" value="${esc(motion.nay)}" placeholder="0" oninput="updateMotionField('${disc.id}','${motion.id}','nay',this.value)">
+                <label>Abstain:</label><input class="vote-input" type="text" value="${esc(motion.abstain)}" placeholder="0" oninput="updateMotionField('${disc.id}','${motion.id}','abstain',this.value)">
+              </div>
+              <div class="motion-result">
+                <span style="font-size:12px;color:var(--muted);margin-right:4px;">Result:</span>
+                ${['passed','failed','tabled'].map(r => `<button class="result-btn ${motion.result===r?'active-'+r:''}" onclick="setMotionResult('${disc.id}','${motion.id}','${r}')">${r.charAt(0).toUpperCase()+r.slice(1)}</button>`).join('')}
+              </div>
+            </div>
+          `).join('')}
+        </div>
+      </div>
+    </div>
+  `).join('');
+}
+
+// ============================================================
+// ACTION ITEMS
+// ============================================================
+function addActionItem() {
+  state.actionItems.push({ id: uid(), text: '', assignedTo: '', dueDate: '', done: false });
+  renderActionItems();
+  persist();
+}
+
+function removeActionItem(id) {
+  state.actionItems = state.actionItems.filter(a => a.id !== id);
+  renderActionItems();
+  persist();
+}
+
+function updateActionField(id, field, value) {
+  const item = state.actionItems.find(a => a.id === id);
+  if (item) { item[field] = field === 'done' ? value : value; persist(); }
+}
+
+function toggleActionDone(id) {
+  const item = state.actionItems.find(a => a.id === id);
+  if (item) { item.done = !item.done; renderActionItems(); persist(); }
+}
+
+function renderActionItems() {
+  const list = document.getElementById('action-items-list');
+  if (!state.actionItems.length) {
+    list.innerHTML = '<div class="empty-state">No action items yet.</div>';
+    return;
+  }
+  list.innerHTML = state.actionItems.map(item => `
+    <div class="action-item ${item.done?'done':''}">
+      <input type="checkbox" ${item.done?'checked':''} onchange="toggleActionDone('${item.id}')">
+      <div class="action-content">
+        <input type="text" value="${esc(item.text)}" placeholder="Action item description" style="flex:2;" oninput="updateActionField('${item.id}','text',this.value)">
+        <select style="width:160px;" onchange="updateActionField('${item.id}','assignedTo',this.value)">
+          <option value="">Assigned to...</option>
+          ${state.roster.map(m=>`<option ${item.assignedTo===m.name?'selected':''}>${esc(m.name)}</option>`).join('')}
+          <option ${item.assignedTo==='All Board'?'selected':''}>All Board</option>
+          <option ${item.assignedTo==='Property Manager'?'selected':''}>Property Manager</option>
+        </select>
+        <input type="date" value="${item.dueDate||''}" style="width:140px;" oninput="updateActionField('${item.id}','dueDate',this.value)">
+      </div>
+      <button class="btn btn-danger btn-sm btn-icon" onclick="removeActionItem('${item.id}')">✕</button>
+    </div>
+  `).join('');
+}
+
+// ============================================================
+// MINUTES GENERATION
+// ============================================================
+function generateMinutes() {
+  syncFormValues();
+  const org = state.orgName || '[HOA NAME]';
+  const date = state.meetingDate ? formatDate(state.meetingDate) : '[DATE]';
+  const type = state.meetingType || 'Regular Board Meeting';
+  const location = state.meetingLocation || state.meetingAddress || '[LOCATION]';
+  const timeCalled = state.timeCalled ? fmt12(state.timeCalled) : '[TIME]';
+  const timeAdjourned = state.timeAdjourned ? fmt12(state.timeAdjourned) : '[TIME]';
+
+  // Attendance
+  const present = state.roster.filter(m => {
+    const att = state.attendance[m.id];
+    return !att || att.status === 'present' || att.status === 'late' || att.status === 'departed';
+  });
+  const absent = state.roster.filter(m => state.attendance[m.id]?.status === 'absent');
+
+  const attendanceHTML = present.length ? present.map(m => {
+    const att = state.attendance[m.id] || {};
+    let note = '';
+    if (att.status === 'late' && att.timeArrived) note = ` (arrived ${fmt12(att.timeArrived)})`;
+    if (att.status === 'departed' && att.timeDeparted) note = ` (departed ${fmt12(att.timeDeparted)})`;
+    return `<div class="min-attendance-row"><span class="min-attendance-name">${esc(m.name)}</span><span class="min-attendance-note">${esc(m.role)}${note}</span></div>`;
+  }).join('') : '<div style="font-size:13px;color:#666;">No attendance recorded.</div>';
+
+  const absentHTML = absent.length ? absent.map(m =>
+    `<div class="min-attendance-row"><span class="min-attendance-name">${esc(m.name)}</span><span class="min-attendance-note">${esc(m.role)}</span></div>`
+  ).join('') : '';
+
+  const addlAttendees = state.additionalAttendees ? `<p style="font-size:13px;margin-top:6px;"><strong>Also Present:</strong> ${esc(state.additionalAttendees)}</p>` : '';
+
+  // Discussion / Agenda
+  const discussionHTML = state.discussion.length ? state.discussion.map((disc, i) => {
+    const motionsHTML = disc.motions.map(m => {
+      const voteStr = [
+        m.yea ? `Yea: ${m.yea}` : '', m.nay ? `Nay: ${m.nay}` : '', m.abstain ? `Abstain: ${m.abstain}` : ''
+      ].filter(Boolean).join(' | ');
+      const resultClass = m.result ? `result-${m.result}` : '';
+      const resultLabel = m.result ? m.result.charAt(0).toUpperCase() + m.result.slice(1) : '';
+      return `
+        <div class="min-motion">
+          <div class="min-motion-text">MOTION: ${esc(m.text) || '[Motion text not recorded]'}</div>
+          <div class="min-motion-vote">
+            ${m.movedBy ? `Moved by: <strong>${esc(m.movedBy)}</strong>` : ''}
+            ${m.secondedBy ? ` &nbsp;|&nbsp; Seconded by: <strong>${esc(m.secondedBy)}</strong>` : ''}
+            ${voteStr ? ` &nbsp;|&nbsp; Vote: ${voteStr}` : ''}
+          </div>
+          ${resultLabel ? `<div><span class="min-motion-result ${resultClass}">${resultLabel}</span></div>` : ''}
+        </div>`;
+    }).join('');
+
+    const timeStr = disc.timeStarted ? ` <span style="font-size:12px;font-weight:400;color:#777;">(${fmt12(disc.timeStarted)})</span>` : '';
+    return `
+      <div class="min-agenda-item">
+        <div class="min-agenda-title">${i+1}. ${esc(disc.title) || '[Untitled Item]'}${timeStr}</div>
+        ${disc.notes ? `<div class="min-agenda-notes">${esc(disc.notes)}</div>` : ''}
+        ${motionsHTML}
+      </div>`;
+  }).join('') : '<p style="font-size:13px;color:#666;margin-left:12px;">No discussion items recorded.</p>';
+
+  // Action Items
+  const actionHTML = state.actionItems.length ? state.actionItems.map(a =>
+    `<div class="min-action-item"><span style="flex:1;">${esc(a.text) || '[Action item]'}</span>${a.assignedTo ? `<strong>${esc(a.assignedTo)}</strong>` : ''}${a.dueDate ? ` — Due: ${formatDate(a.dueDate)}` : ''}</div>`
+  ).join('') : '<p style="font-size:13px;color:#666;">No action items recorded.</p>';
+
+  // Secretary name
+  const secretary = state.roster.find(m => m.role === 'Secretary');
+  const president = state.roster.find(m => m.role === 'President');
+
+  const html = `
+    <div class="min-org">${esc(org)}</div>
+    <div class="min-doc-title">${esc(type)} — Minutes</div>
+    <div class="min-meta">${date} &nbsp;|&nbsp; ${esc(location)}</div>
+    <hr class="min-divider">
+
+    <div class="min-section">
+      <div class="min-section-title">Call to Order</div>
+      <p style="font-size:13px;">The ${esc(type.toLowerCase())} of ${esc(org)} was called to order at ${timeCalled} by ${president ? esc(president.name) + ', President' : 'the presiding officer'}.</p>
+    </div>
+
+    <div class="min-section">
+      <div class="min-section-title">Board Members Present</div>
+      <div class="min-attendance-grid">${attendanceHTML}</div>
+      ${absentHTML ? `<div style="margin-top:10px;"><strong style="font-size:12px;text-transform:uppercase;color:#888;letter-spacing:.5px;">Absent</strong><div class="min-attendance-grid" style="margin-top:6px;">${absentHTML}</div></div>` : ''}
+      ${addlAttendees}
+    </div>
+
+    <hr class="min-divider-thin">
+
+    <div class="min-section">
+      <div class="min-section-title">Agenda Items</div>
+      ${discussionHTML}
+    </div>
+
+    <hr class="min-divider-thin">
+
+    <div class="min-section">
+      <div class="min-section-title">Action Items</div>
+      ${actionHTML}
+    </div>
+
+    <hr class="min-divider-thin">
+
+    <div class="min-section">
+      <div class="min-section-title">Adjournment</div>
+      <p style="font-size:13px;">There being no further business, the meeting was adjourned at ${timeAdjourned}.</p>
+    </div>
+
+    <div class="min-sig-block">
+      <div>
+        <div class="min-sig-line">${president ? esc(president.name) + ', President' : 'President'}</div>
+      </div>
+      <div>
+        <div class="min-sig-line">${secretary ? esc(secretary.name) + ', Secretary' : 'Secretary'}</div>
+      </div>
+    </div>
+
+    <div class="min-footer">Minutes recorded by ${secretary ? esc(secretary.name) : 'Secretary'} &nbsp;|&nbsp; ${esc(org)} &nbsp;|&nbsp; ${date}</div>
+  `;
+
+  document.getElementById('minutes-preview').innerHTML = html;
+}
+
+function printMinutes() {
+  generateMinutes();
+  setTimeout(() => window.print(), 200);
+}
+
+// ============================================================
+// PERSISTENCE
+// ============================================================
+function syncFormValues() {
+  state.orgName = document.getElementById('org-name').value;
+  state.meetingDate = document.getElementById('meeting-date').value;
+  state.meetingType = document.getElementById('meeting-type').value;
+  state.meetingLocation = document.getElementById('meeting-location').value;
+  state.meetingAddress = document.getElementById('meeting-address').value;
+  state.timeCalled = document.getElementById('time-called').value;
+  state.timeAdjourned = document.getElementById('time-adjourned').value;
+  state.additionalAttendees = document.getElementById('additional-attendees').value;
+}
+
+function persist() {
+  syncFormValues();
+  localStorage.setItem('hoa_meeting_state', JSON.stringify(state));
+}
+
+function loadFromStorage() {
+  try {
+    const saved = localStorage.getItem('hoa_meeting_state');
+    if (saved) {
+      const parsed = JSON.parse(saved);
+      Object.assign(state, parsed);
+    }
+  } catch(e) {}
+}
+
+function renderAll() {
+  // populate form fields
+  document.getElementById('org-name').value = state.orgName || '';
+  document.getElementById('meeting-date').value = state.meetingDate || '';
+  document.getElementById('meeting-type').value = state.meetingType || 'Regular Board Meeting';
+  document.getElementById('meeting-location').value = state.meetingLocation || '';
+  document.getElementById('meeting-address').value = state.meetingAddress || '';
+  document.getElementById('time-called').value = state.timeCalled || '';
+  document.getElementById('time-adjourned').value = state.timeAdjourned || '';
+  document.getElementById('additional-attendees').value = state.additionalAttendees || '';
+  document.getElementById('display-org-name').textContent = state.orgName || 'Homeowners Association';
+  renderRoster();
+  renderAttendance();
+  renderAgenda();
+  renderDiscussion();
+  renderActionItems();
+}
+
+function saveData() {
+  syncFormValues();
+  const data = JSON.stringify(state, null, 2);
+  const blob = new Blob([data], { type: 'application/json' });
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(blob);
+  const dateStr = state.meetingDate || new Date().toISOString().split('T')[0];
+  a.download = `hoa-meeting-${dateStr}.json`;
+  a.click();
+}
+
+function loadData() {
+  const input = document.createElement('input');
+  input.type = 'file';
+  input.accept = '.json';
+  input.onchange = e => {
+    const file = e.target.files[0];
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = ev => {
+      try {
+        const loaded = JSON.parse(ev.target.result);
+        Object.assign(state, loaded);
+        renderAll();
+        persist();
+        alert('Meeting data loaded successfully.');
+      } catch(err) { alert('Error loading file.'); }
+    };
+    reader.readAsText(file);
+  };
+  input.click();
+}
+
+// ============================================================
+// HELPERS
+// ============================================================
+function uid() { return 'id_' + Date.now() + '_' + Math.random().toString(36).slice(2,7); }
+function currentTime() { return new Date().toTimeString().slice(0,5); }
+function esc(str) { return (str||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;'); }
+function formatDate(str) {
+  if (!str) return '';
+  const [y,m,d] = str.split('-');
+  const months = ['January','February','March','April','May','June','July','August','September','October','November','December'];
+  return `${months[parseInt(m)-1]} ${parseInt(d)}, ${y}`;
+}
+function fmt12(time) {
+  if (!time) return '';
+  const [h, m] = time.split(':');
+  const hr = parseInt(h);
+  const ampm = hr >= 12 ? 'PM' : 'AM';
+  const hr12 = hr === 0 ? 12 : hr > 12 ? hr - 12 : hr;
+  return `${hr12}:${m} ${ampm}`;
+}
+function showTabByName(name) {
+  document.querySelectorAll('.tab-panel').forEach(p => p.classList.remove('active'));
+  document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
+  document.getElementById('tab-' + name).classList.add('active');
+  const tabs = ['setup','attendance','agenda','discussion','actions','minutes'];
+  const idx = tabs.indexOf(name);
+  document.querySelectorAll('.tab')[idx]?.classList.add('active');
+}
+
+// Auto-persist on form input
+document.addEventListener('input', e => {
+  if (['org-name','meeting-date','meeting-type','meeting-location','meeting-address','time-called','time-adjourned','additional-attendees'].includes(e.target.id)) {
+    persist();
+    if (e.target.id === 'org-name') updateOrgDisplay();
+  }
+});
+</script>
+</body>
+</html>
