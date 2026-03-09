@@ -29,6 +29,9 @@
   .top-bar h1 { font-size: 18px; font-weight: 600; letter-spacing: .3px; }
   .top-bar .org-name { font-size: 13px; opacity: .8; margin-top: 2px; }
   .top-bar-actions { display: flex; gap: 8px; }
+  .top-bar .btn-ghost { color: #ffffff; border-color: rgba(255,255,255,.55); background: rgba(255,255,255,.08); }
+  .top-bar .btn-ghost:hover { background: rgba(255,255,255,.18); }
+  .top-bar .btn-accent { color: #1d3557; font-weight: 700; }
   .tabs { display: flex; gap: 4px; margin-bottom: 20px; border-bottom: 2px solid var(--border); }
   .tab { padding: 9px 18px; border: none; background: none; cursor: pointer; font-size: 14px; color: var(--muted); border-bottom: 3px solid transparent; margin-bottom: -2px; border-radius: var(--radius) var(--radius) 0 0; transition: all .15s; font-weight: 500; }
   .tab:hover { color: var(--primary); background: #eef2f7; }
@@ -63,6 +66,8 @@
   }
   input:focus, select:focus, textarea:focus { outline: none; border-color: var(--primary); box-shadow: 0 0 0 3px rgba(26,58,92,.1); }
   textarea { resize: vertical; min-height: 70px; }
+  .time-field { display: flex; flex-direction: column; gap: 4px; }
+  .time-display { font-size: 12px; color: var(--muted); min-height: 18px; }
 
   /* ===== MEETING HEADER ===== */
   .meeting-meta { display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 12px; }
@@ -107,6 +112,17 @@
   .discussion-header .disc-time { font-size: 12px; opacity: .7; }
   .discussion-body { padding: 14px; }
   .discussion-notes-area { width: 100%; margin-bottom: 10px; }
+  .recording-panel { border: 1px solid var(--border); border-radius: var(--radius); padding: 10px 12px; margin-bottom: 10px; background: #fbfcfe; }
+  .recording-row { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+  .recording-status { font-size: 12px; color: var(--muted); }
+  .recording-status.active { color: var(--danger); font-weight: 700; }
+  .audio-player { width: 100%; margin-top: 8px; }
+  .dictation-fab { position: fixed; z-index: 1200; display: none; align-items: center; justify-content: center; min-width: 48px; height: 36px; padding: 0 12px; border-radius: 999px; border: none; background: var(--primary); color: #fff; font-size: 12px; font-weight: 700; box-shadow: 0 10px 24px rgba(26,58,92,.22); cursor: pointer; }
+  .dictation-fab.visible { display: inline-flex; }
+  .dictation-fab.active { background: var(--danger); }
+  .dictation-status { position: fixed; z-index: 1199; display: none; max-width: 240px; padding: 8px 10px; border-radius: 10px; background: rgba(26,58,92,.95); color: #fff; font-size: 12px; line-height: 1.4; box-shadow: 0 10px 24px rgba(26,58,92,.22); }
+  .dictation-status.visible { display: block; }
+  .dictation-status.error { background: rgba(192,57,43,.96); }
 
   /* ===== MOTIONS ===== */
   .motions-section { background: #f8f9ff; border: 1px solid #d0d8f0; border-radius: var(--radius); padding: 12px; margin-top: 10px; }
@@ -189,7 +205,7 @@
   }
 
   /* ===== CLOCK ===== */
-  .clock { font-size: 22px; font-weight: 700; font-variant-numeric: tabular-nums; letter-spacing: 1px; color: var(--accent); }
+  .clock { font-size: 22px; font-weight: 800; font-variant-numeric: tabular-nums; letter-spacing: 1px; color: #ffd166; text-shadow: 0 1px 0 rgba(0,0,0,.2); }
 </style>
 </head>
 <body>
@@ -206,6 +222,7 @@
       <div class="top-bar-actions">
         <button class="btn btn-ghost btn-sm" onclick="saveData()">💾 Save</button>
         <button class="btn btn-ghost btn-sm" onclick="loadData()">📂 Load</button>
+        <button class="btn btn-danger btn-sm" onclick="clearMeeting()">Clear Meeting</button>
         <button class="btn btn-accent btn-sm" onclick="printMinutes()">🖨 Print Minutes</button>
       </div>
     </div>
@@ -246,11 +263,17 @@
         </div>
         <div class="form-group">
           <label>Called to Order</label>
-          <input type="time" id="time-called">
+          <div class="time-field">
+            <input type="time" id="time-called">
+            <div class="time-display" id="time-called-display"></div>
+          </div>
         </div>
         <div class="form-group">
           <label>Adjourned</label>
-          <input type="time" id="time-adjourned">
+          <div class="time-field">
+            <input type="time" id="time-adjourned">
+            <div class="time-display" id="time-adjourned-display"></div>
+          </div>
         </div>
         <div class="form-group">
           <label>Meeting Type</label>
@@ -338,6 +361,7 @@
           <button class="btn btn-primary btn-sm" onclick="addDiscussionItem()">+ Add Discussion Item</button>
         </div>
       </div>
+      <div class="text-muted">Hover or focus any text field for the mic button, or press Alt+Shift+M to toggle dictation on the active field.</div>
     </div>
     <div id="discussion-list">
       <div class="empty-state card">No discussion items. Import from agenda or add manually.</div>

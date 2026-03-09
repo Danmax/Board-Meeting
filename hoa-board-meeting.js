@@ -1,7 +1,7 @@
 // ============================================================
 // STATE
 // ============================================================
-let state = {
+const INITIAL_STATE = {
   orgName: '',
   meetingDate: '',
   meetingType: 'Regular Board Meeting',
@@ -16,6 +16,7 @@ let state = {
   discussion: [],
   actionItems: []
 };
+let state = createInitialState();
 
 const RECURRING_AGENDA = [
   { title: 'Call to Order', type: 'Procedural', notes: '', recurring: true },
@@ -30,11 +31,36 @@ const FIELD_ID_TO_STATE_KEY = {
   'time-called': 'timeCalled',
   'time-adjourned': 'timeAdjourned'
 };
+const speechState = {
+  supported: false,
+  recognition: null,
+  activeField: null,
+  targetField: null,
+  interimTranscript: '',
+  status: '',
+  error: '',
+  runId: 0,
+  buttonEl: null,
+  statusEl: null,
+  hideTimer: null,
+  inactivityTimer: null
+};
+const recordingState = {
+  supported: typeof window !== 'undefined' && Boolean(window.MediaRecorder && navigator.mediaDevices?.getUserMedia),
+  mediaRecorder: null,
+  stream: null,
+  activeDiscussionId: null,
+  chunks: [],
+  status: '',
+  error: '',
+  audioByDiscussion: {}
+};
 
 // ============================================================
 // INIT
 // ============================================================
 document.addEventListener('DOMContentLoaded', () => {
+  initSpeechRecognition();
   loadFromStorage();
   renderAll();
   startClock();
@@ -46,6 +72,10 @@ document.addEventListener('DOMContentLoaded', () => {
     persist();
   }
 });
+
+function createInitialState() {
+  return JSON.parse(JSON.stringify(INITIAL_STATE));
+}
 
 // ============================================================
 // CLOCK
@@ -81,6 +111,456 @@ function showTab(name) {
 
 function showTabByName(name) {
   showTab(name);
+}
+
+// ============================================================
+// SPEECH
+// ============================================================
+function initSpeechRecognition() {
+  const SpeechRecognitionCtor = window.SpeechRecognition || window.webkitSpeechRecognition;
+  speechState.supported = Boolean(SpeechRecognitionCtor);
+
+  initGlobalDictationUi();
+  bindGlobalDictationEvents();
+
+  if (!speechState.supported) {
+    speechState.error = 'Dictation requires Chrome speech recognition support.';
+    updateDictationUi();
+    return;
+  }
+
+  const recognition = new SpeechRecognitionCtor();
+  recognition.continuous = true;
+  recognition.interimResults = true;
+  recognition.lang = 'en-US';
+  speechState.recognition = recognition;
+
+  recognition.onresult = (event) => {
+    if (!speechState.activeField) return;
+
+    let finalText = '';
+    let interimText = '';
+
+    for (let i = event.resultIndex; i < event.results.length; i += 1) {
+      const transcript = event.results[i][0].transcript;
+      if (event.results[i].isFinal) {
+        finalText += transcript;
+      } else {
+        interimText += transcript;
+      }
+    }
+
+    speechState.interimTranscript = interimText.trim();
+    if (speechState.interimTranscript || finalText.trim()) {
+      resetSpeechInactivityTimer();
+    }
+    if (finalText.trim()) {
+      insertDictationText(speechState.activeField, finalText);
+      speechState.status = 'Listening...';
+    }
+    updateDictationUi();
+  };
+
+  recognition.onerror = (event) => {
+    if (event.error === 'no-speech') {
+      speechState.status = 'Listening... no speech detected yet.';
+      speechState.error = '';
+    } else if (event.error === 'not-allowed' || event.error === 'service-not-allowed') {
+      speechState.error = 'Microphone access was denied.';
+      speechState.status = '';
+    } else {
+      speechState.error = `Dictation error: ${event.error}.`;
+      speechState.status = '';
+    }
+    speechState.interimTranscript = '';
+    updateDictationUi();
+  };
+
+  recognition.onend = () => {
+    speechState.activeField = null;
+    speechState.interimTranscript = '';
+    if (!speechState.error) {
+      speechState.status = 'Dictation stopped.';
+    }
+    updateDictationUi();
+  };
+
+  updateDictationUi();
+}
+
+function initGlobalDictationUi() {
+  const button = document.createElement('button');
+  button.type = 'button';
+  button.className = 'dictation-fab';
+  button.textContent = 'Mic';
+  button.addEventListener('click', () => toggleGlobalDictation());
+  button.addEventListener('mouseenter', clearDictationHideTimer);
+  button.addEventListener('mouseleave', scheduleDictationHideIfIdle);
+
+  const status = document.createElement('div');
+  status.className = 'dictation-status';
+
+  document.body.appendChild(button);
+  document.body.appendChild(status);
+
+  speechState.buttonEl = button;
+  speechState.statusEl = status;
+}
+
+function bindGlobalDictationEvents() {
+  document.addEventListener('focusin', (event) => {
+    const field = getEligibleDictationField(event.target);
+    if (!field) return;
+    if (speechState.activeField && speechState.activeField !== field) {
+      stopGlobalDictation('Dictation stopped after switching fields.');
+    }
+    setDictationTarget(field);
+  });
+
+  document.addEventListener('focusout', (event) => {
+    const field = getEligibleDictationField(event.target);
+    if (!field) return;
+    window.setTimeout(() => {
+      if (document.activeElement !== field && speechState.activeField !== field) {
+        scheduleDictationHideIfIdle();
+      }
+    }, 0);
+  });
+
+  document.addEventListener('mouseover', (event) => {
+    const field = getEligibleDictationField(event.target);
+    if (!field) return;
+    setDictationTarget(field);
+  });
+
+  document.addEventListener('mouseout', (event) => {
+    const field = getEligibleDictationField(event.target);
+    if (!field) return;
+    if (speechState.buttonEl?.contains(event.relatedTarget)) return;
+    if (speechState.activeField === field) {
+      stopGlobalDictation('Dictation stopped after leaving the field.');
+      return;
+    }
+    if (document.activeElement === field) return;
+    scheduleDictationHideIfIdle();
+  });
+
+  document.addEventListener('keydown', (event) => {
+    if (!(event.altKey && event.shiftKey && event.key.toLowerCase() === 'm')) return;
+    const field = getEligibleDictationField(document.activeElement) || speechState.targetField;
+    if (!field) return;
+    event.preventDefault();
+    setDictationTarget(field);
+    toggleGlobalDictation(field);
+  });
+
+  window.addEventListener('scroll', () => updateDictationUi(), true);
+  window.addEventListener('resize', () => updateDictationUi());
+}
+
+function getEligibleDictationField(node) {
+  if (!(node instanceof HTMLElement)) return null;
+  const field = node.closest('textarea, input[type="text"]');
+  if (!field || field.disabled || field.readOnly) return null;
+  return field;
+}
+
+function setDictationTarget(field) {
+  clearDictationHideTimer();
+  speechState.targetField = field;
+  updateDictationUi();
+}
+
+function toggleGlobalDictation(field = speechState.targetField || getEligibleDictationField(document.activeElement)) {
+  if (!field) return;
+
+  if (speechState.activeField === field) {
+    stopGlobalDictation();
+  } else {
+    startGlobalDictation(field);
+  }
+}
+
+function startGlobalDictation(field) {
+  if (!speechState.supported || !speechState.recognition) {
+    speechState.error = 'Dictation is unavailable in this browser.';
+    updateDictationUi();
+    return;
+  }
+
+  if (speechState.activeField && speechState.activeField !== field) {
+    stopGlobalDictation();
+  }
+
+  speechState.activeField = field;
+  speechState.targetField = field;
+  speechState.interimTranscript = '';
+  speechState.status = 'Listening...';
+  speechState.error = '';
+  field.focus();
+  resetSpeechInactivityTimer();
+
+  try {
+    speechState.recognition.start();
+  } catch (error) {
+    speechState.activeField = null;
+    speechState.error = 'Unable to start dictation. Check microphone permissions in Chrome.';
+    speechState.status = '';
+  }
+
+  updateDictationUi();
+}
+
+function stopGlobalDictation(reason = 'Dictation stopped.') {
+  if (!speechState.recognition || !speechState.activeField) return;
+
+  clearSpeechInactivityTimer();
+  speechState.status = reason;
+  speechState.interimTranscript = '';
+
+  try {
+    speechState.recognition.stop();
+  } catch (error) {
+    speechState.error = 'Unable to stop dictation cleanly.';
+  }
+
+  updateDictationUi();
+}
+
+function insertDictationText(field, transcript) {
+  const text = formatDictationText(field, transcript);
+  const start = typeof field.selectionStart === 'number' ? field.selectionStart : field.value.length;
+  const end = typeof field.selectionEnd === 'number' ? field.selectionEnd : field.value.length;
+
+  field.focus();
+  if (typeof field.setRangeText === 'function') {
+    field.setRangeText(text, start, end, 'end');
+  } else {
+    field.value = `${field.value.slice(0, start)}${text}${field.value.slice(end)}`;
+  }
+
+  field.dispatchEvent(new Event('input', { bubbles: true }));
+  resetSpeechInactivityTimer();
+}
+
+function formatDictationText(field, transcript) {
+  const incoming = transcript.trim();
+  if (!incoming) return '';
+
+  const start = typeof field.selectionStart === 'number' ? field.selectionStart : field.value.length;
+  const before = field.value.slice(0, start);
+  if (!before) return incoming;
+
+  return /\s$/.test(before) ? incoming : ` ${incoming}`;
+}
+
+function updateDictationUi() {
+  const button = speechState.buttonEl;
+  const status = speechState.statusEl;
+  const field = speechState.activeField || speechState.targetField;
+  if (!button || !status) return;
+
+  if (!field || !document.body.contains(field)) {
+    button.classList.remove('visible', 'active');
+    status.classList.remove('visible', 'error');
+    return;
+  }
+
+  const rect = field.getBoundingClientRect();
+  const top = Math.max(12, rect.top + 8);
+  const left = Math.min(window.innerWidth - 64, rect.right - 56);
+
+  button.style.top = `${top}px`;
+  button.style.left = `${Math.max(12, left)}px`;
+  button.classList.add('visible');
+  button.classList.toggle('active', speechState.activeField === field);
+  button.textContent = speechState.activeField === field ? 'Stop' : 'Mic';
+
+  const message = speechState.error || speechState.interimTranscript || speechState.status;
+  if (message) {
+    status.textContent = message;
+    status.style.top = `${top + 42}px`;
+    status.style.left = `${Math.max(12, left - 12)}px`;
+    status.classList.add('visible');
+    status.classList.toggle('error', Boolean(speechState.error));
+  } else {
+    status.classList.remove('visible', 'error');
+  }
+}
+
+function clearDictationHideTimer() {
+  if (speechState.hideTimer) {
+    window.clearTimeout(speechState.hideTimer);
+    speechState.hideTimer = null;
+  }
+}
+
+function scheduleDictationHideIfIdle() {
+  clearDictationHideTimer();
+  if (speechState.activeField) return;
+
+  speechState.hideTimer = window.setTimeout(() => {
+    const focused = getEligibleDictationField(document.activeElement);
+    speechState.targetField = focused;
+    updateDictationUi();
+  }, 150);
+}
+
+function resetSpeechInactivityTimer() {
+  clearSpeechInactivityTimer();
+  if (!speechState.activeField) return;
+
+  speechState.inactivityTimer = window.setTimeout(() => {
+    if (speechState.activeField) {
+      stopGlobalDictation('Dictation stopped after 10 seconds of inactivity.');
+    }
+  }, 10000);
+}
+
+function clearSpeechInactivityTimer() {
+  if (speechState.inactivityTimer) {
+    window.clearTimeout(speechState.inactivityTimer);
+    speechState.inactivityTimer = null;
+  }
+}
+
+// ============================================================
+// RECORDING
+// ============================================================
+async function startDiscussionRecording(discId) {
+  if (!recordingState.supported) {
+    recordingState.error = 'Audio recording is unavailable in this browser.';
+    renderDiscussion();
+    return;
+  }
+
+  if (recordingState.activeDiscussionId && recordingState.activeDiscussionId !== discId) {
+    stopDiscussionRecording();
+  }
+
+  if (recordingState.activeDiscussionId === discId) {
+    return;
+  }
+
+  cleanupDiscussionAudio(discId);
+
+  try {
+    const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+    const recorder = new MediaRecorder(stream);
+
+    recordingState.mediaRecorder = recorder;
+    recordingState.stream = stream;
+    recordingState.activeDiscussionId = discId;
+    recordingState.chunks = [];
+    recordingState.status = 'Recording...';
+    recordingState.error = '';
+
+    recorder.ondataavailable = (event) => {
+      if (event.data && event.data.size > 0) {
+        recordingState.chunks.push(event.data);
+      }
+    };
+
+    recorder.onstop = () => {
+      const activeId = recordingState.activeDiscussionId || discId;
+      const mimeType = recorder.mimeType || 'audio/webm';
+      const blob = new Blob(recordingState.chunks, { type: mimeType });
+      const url = URL.createObjectURL(blob);
+
+      cleanupDiscussionAudio(activeId);
+      recordingState.audioByDiscussion[activeId] = {
+        blob,
+        url,
+        mimeType,
+        createdAt: new Date().toISOString()
+      };
+
+      stopRecordingStream();
+      recordingState.mediaRecorder = null;
+      recordingState.chunks = [];
+      recordingState.activeDiscussionId = null;
+      recordingState.status = 'Recording saved locally for this session.';
+      renderDiscussion();
+    };
+
+    recorder.onerror = () => {
+      recordingState.error = 'Audio recording failed.';
+      stopRecordingStream();
+      recordingState.mediaRecorder = null;
+      recordingState.chunks = [];
+      recordingState.activeDiscussionId = null;
+      recordingState.status = '';
+      renderDiscussion();
+    };
+
+    recorder.start();
+    renderDiscussion();
+  } catch (error) {
+    recordingState.error = 'Microphone access was denied for audio recording.';
+    recordingState.status = '';
+    renderDiscussion();
+  }
+}
+
+function stopDiscussionRecording() {
+  if (!recordingState.mediaRecorder || recordingState.mediaRecorder.state === 'inactive') return;
+
+  recordingState.status = 'Finishing recording...';
+  recordingState.mediaRecorder.stop();
+  renderDiscussion();
+}
+
+function stopRecordingStream() {
+  if (recordingState.stream) {
+    recordingState.stream.getTracks().forEach((track) => track.stop());
+    recordingState.stream = null;
+  }
+}
+
+function cleanupDiscussionAudio(discId) {
+  const existing = recordingState.audioByDiscussion[discId];
+  if (!existing) return;
+  URL.revokeObjectURL(existing.url);
+  delete recordingState.audioByDiscussion[discId];
+}
+
+function downloadDiscussionAudio(discId) {
+  const audio = recordingState.audioByDiscussion[discId];
+  if (!audio) return;
+
+  const item = state.discussion.find((discussionItem) => discussionItem.id === discId);
+  const safeTitle = (item?.title || 'discussion-audio').toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '') || 'discussion-audio';
+  const extension = audio.mimeType.includes('ogg') ? 'ogg' : 'webm';
+  const anchor = document.createElement('a');
+  anchor.href = audio.url;
+  anchor.download = `${safeTitle}.${extension}`;
+  anchor.click();
+}
+
+function deleteDiscussionAudio(discId) {
+  cleanupDiscussionAudio(discId);
+  if (recordingState.activeDiscussionId === discId) {
+    stopDiscussionRecording();
+  }
+  recordingState.status = 'Recording removed.';
+  recordingState.error = '';
+  renderDiscussion();
+}
+
+function getRecordingStatus(discId) {
+  if (!recordingState.supported) {
+    return { className: 'recording-status', text: recordingState.error || 'Audio recording unavailable.' };
+  }
+  if (recordingState.activeDiscussionId === discId) {
+    return { className: 'recording-status active', text: recordingState.status || 'Recording...' };
+  }
+  if (recordingState.error) {
+    return { className: 'recording-status', text: recordingState.error };
+  }
+  if (recordingState.audioByDiscussion[discId]) {
+    return { className: 'recording-status', text: 'Recording available locally.' };
+  }
+  return { className: 'recording-status', text: recordingState.status || 'Ready to record audio.' };
 }
 
 // ============================================================
@@ -173,13 +653,13 @@ function renderAttendance() {
       ${att.status === 'late' || att.status === 'present'
         ? `
       <div class="member-time">
-        <div><label>Arrived</label><input type="time" value="${att.timeArrived || ''}" oninput="setAttendanceTime('${member.id}','timeArrived',this.value)"></div>
+        <div><label>Arrived</label><input type="time" value="${att.timeArrived || ''}" oninput="setAttendanceTime('${member.id}','timeArrived',this.value)"><div class="time-display">${esc(toDisplayTime(att.timeArrived))}</div></div>
       </div>`
         : ''}
       ${att.status === 'departed'
         ? `
       <div class="member-time">
-        <div><label>Departed</label><input type="time" value="${att.timeDeparted || ''}" oninput="setAttendanceTime('${member.id}','timeDeparted',this.value)"></div>
+        <div><label>Departed</label><input type="time" value="${att.timeDeparted || ''}" oninput="setAttendanceTime('${member.id}','timeDeparted',this.value)"><div class="time-display">${esc(toDisplayTime(att.timeDeparted))}</div></div>
       </div>`
         : ''}
     </div>`;
@@ -204,7 +684,7 @@ function setAttendance(id, status) {
 
 function setAttendanceTime(id, field, value) {
   if (!state.attendance[id]) state.attendance[id] = {};
-  state.attendance[id][field] = value;
+  state.attendance[id][field] = normalizeTimeValue(value);
   persist();
 }
 
@@ -348,6 +828,10 @@ function addDiscussionItem() {
 }
 
 function removeDiscussionItem(id) {
+  if (recordingState.activeDiscussionId === id) {
+    stopDiscussionRecording();
+  }
+  cleanupDiscussionAudio(id);
   state.discussion = state.discussion.filter((item) => item.id !== id);
   renderDiscussion();
   persist();
@@ -356,7 +840,7 @@ function removeDiscussionItem(id) {
 function updateDiscussionField(id, field, value) {
   const item = state.discussion.find((discussionItem) => discussionItem.id === id);
   if (item) {
-    item[field] = value;
+    item[field] = isTimeField(field) ? normalizeTimeValue(value) : value;
     persist();
   }
 }
@@ -408,19 +892,37 @@ function renderDiscussion() {
 
   list.innerHTML = state.discussion
     .map(
-      (disc, index) => `
+      (disc, index) => {
+        const recording = recordingState.audioByDiscussion[disc.id];
+        const recordingStatus = getRecordingStatus(disc.id);
+        const isRecording = recordingState.activeDiscussionId === disc.id;
+        return `
     <div class="discussion-item">
       <div class="discussion-header">
         <span class="disc-num">${index + 1}.</span>
         <input type="text" value="${esc(disc.title)}" placeholder="Discussion topic" style="flex:1;background:transparent;border:none;color:#fff;font-size:14px;font-weight:600;outline:none;" oninput="updateDiscussionField('${disc.id}','title',this.value)">
         <div style="display:flex;align-items:center;gap:8px;">
           <span style="font-size:11px;opacity:.7;">Started:</span>
-          <input type="time" value="${disc.timeStarted || ''}" style="background:transparent;border:1px solid rgba(255,255,255,.3);color:#fff;border-radius:4px;padding:2px 6px;font-size:12px;" oninput="updateDiscussionField('${disc.id}','timeStarted',this.value)">
+          <div style="display:flex;flex-direction:column;gap:2px;">
+            <input type="time" value="${disc.timeStarted || ''}" style="background:transparent;border:1px solid rgba(255,255,255,.3);color:#fff;border-radius:4px;padding:2px 6px;font-size:12px;" oninput="updateDiscussionField('${disc.id}','timeStarted',this.value)">
+            <span style="font-size:11px;opacity:.8;">${esc(toDisplayTime(disc.timeStarted))}</span>
+          </div>
           <button onclick="updateDiscussionField('${disc.id}','timeStarted','${currentTime()}');renderDiscussion();" style="background:rgba(255,255,255,.2);border:none;color:#fff;border-radius:4px;padding:2px 8px;cursor:pointer;font-size:11px;">⏱ Now</button>
           <button onclick="removeDiscussionItem('${disc.id}')" style="background:rgba(255,0,0,.3);border:none;color:#fff;border-radius:4px;padding:2px 8px;cursor:pointer;font-size:11px;">✕</button>
         </div>
       </div>
       <div class="discussion-body">
+        <div class="recording-panel">
+          <div class="recording-row">
+            <button class="btn ${isRecording ? 'btn-danger' : 'btn-ghost'} btn-sm" onclick="${isRecording ? 'stopDiscussionRecording()' : `startDiscussionRecording('${disc.id}')`}" ${!recordingState.supported && !isRecording ? 'disabled' : ''}>
+              ${isRecording ? 'Stop Recording' : 'Record Audio'}
+            </button>
+            ${recording ? `<button class="btn btn-ghost btn-sm" onclick="downloadDiscussionAudio('${disc.id}')">Download</button>` : ''}
+            ${recording ? `<button class="btn btn-ghost btn-sm" onclick="deleteDiscussionAudio('${disc.id}')">Delete</button>` : ''}
+            <span class="${recordingStatus.className}">${esc(recordingStatus.text)}</span>
+          </div>
+          ${recording ? `<audio class="audio-player" controls src="${recording.url}"></audio>` : ''}
+        </div>
         <textarea class="discussion-notes-area" placeholder="Discussion notes, summary, decisions..." rows="3" oninput="updateDiscussionField('${disc.id}','notes',this.value)">${esc(disc.notes)}</textarea>
 
         <div class="motions-section">
@@ -472,7 +974,8 @@ function renderDiscussion() {
         </div>
       </div>
     </div>
-  `
+  `;
+      }
     )
     .join('');
 }
@@ -703,9 +1206,10 @@ function syncFormValues() {
   state.meetingType = document.getElementById('meeting-type').value;
   state.meetingLocation = document.getElementById('meeting-location').value;
   state.meetingAddress = document.getElementById('meeting-address').value;
-  state.timeCalled = document.getElementById('time-called').value;
-  state.timeAdjourned = document.getElementById('time-adjourned').value;
+  state.timeCalled = normalizeTimeValue(document.getElementById('time-called').value);
+  state.timeAdjourned = normalizeTimeValue(document.getElementById('time-adjourned').value);
   state.additionalAttendees = document.getElementById('additional-attendees').value;
+  renderSetupTimeDisplays();
 }
 
 function persist() {
@@ -735,6 +1239,7 @@ function renderAll() {
   document.getElementById('time-adjourned').value = state.timeAdjourned || '';
   document.getElementById('additional-attendees').value = state.additionalAttendees || '';
   document.getElementById('display-org-name').textContent = state.orgName || 'Homeowners Association';
+  renderSetupTimeDisplays();
   renderRoster();
   renderAttendance();
   renderAgenda();
@@ -751,6 +1256,32 @@ function saveData() {
   const dateStr = state.meetingDate || new Date().toISOString().split('T')[0];
   anchor.download = `hoa-meeting-${dateStr}.json`;
   anchor.click();
+}
+
+function clearMeeting() {
+  const confirmed = window.confirm('Clear the current meeting data from this browser? This will reset the current meeting and local autosave.');
+  if (!confirmed) return;
+
+  stopGlobalDictation('Dictation stopped.');
+  if (recordingState.activeDiscussionId) {
+    stopDiscussionRecording();
+  }
+  stopRecordingStream();
+  Object.keys(recordingState.audioByDiscussion).forEach((discId) => cleanupDiscussionAudio(discId));
+  recordingState.mediaRecorder = null;
+  recordingState.chunks = [];
+  recordingState.status = '';
+  recordingState.error = '';
+  recordingState.activeDiscussionId = null;
+
+  state = createInitialState();
+  const today = new Date().toISOString().split('T')[0];
+  state.meetingDate = today;
+
+  localStorage.removeItem('hoa_meeting_state');
+  renderAll();
+  persist();
+  showTabByName('setup');
 }
 
 function loadData() {
@@ -787,6 +1318,52 @@ function uid() {
 
 function currentTime() {
   return new Date().toTimeString().slice(0, 5);
+}
+
+function isTimeField(field) {
+  return ['timeStarted', 'timeArrived', 'timeDeparted'].includes(field);
+}
+
+function toDisplayTime(value) {
+  const normalized = normalizeTimeValue(value);
+  return normalized && /^\d{2}:\d{2}$/.test(normalized) ? fmt12(normalized) : value || '';
+}
+
+function normalizeTimeValue(value) {
+  const raw = (value || '').trim();
+  if (!raw) return '';
+
+  const directMatch = raw.match(/^(\d{1,2}):(\d{2})$/);
+  if (directMatch) {
+    const hours = parseInt(directMatch[1], 10);
+    const minutes = parseInt(directMatch[2], 10);
+    if (hours >= 0 && hours <= 23 && minutes >= 0 && minutes <= 59) {
+      return `${String(hours).padStart(2, '0')}:${String(minutes).padStart(2, '0')}`;
+    }
+  }
+
+  const meridiemMatch = raw.match(/^(\d{1,2})(?::(\d{2}))?\s*([AaPp][Mm])$/);
+  if (!meridiemMatch) return raw;
+
+  let hours = parseInt(meridiemMatch[1], 10);
+  const minutes = parseInt(meridiemMatch[2] || '0', 10);
+  const meridiem = meridiemMatch[3].toUpperCase();
+
+  if (hours < 1 || hours > 12 || minutes < 0 || minutes > 59) return raw;
+  if (meridiem === 'AM') {
+    hours = hours === 12 ? 0 : hours;
+  } else if (hours !== 12) {
+    hours += 12;
+  }
+
+  return `${String(hours).padStart(2, '0')}:${String(minutes).padStart(2, '0')}`;
+}
+
+function renderSetupTimeDisplays() {
+  const calledDisplay = document.getElementById('time-called-display');
+  const adjournedDisplay = document.getElementById('time-adjourned-display');
+  if (calledDisplay) calledDisplay.textContent = toDisplayTime(state.timeCalled);
+  if (adjournedDisplay) adjournedDisplay.textContent = toDisplayTime(state.timeAdjourned);
 }
 
 function esc(str) {
