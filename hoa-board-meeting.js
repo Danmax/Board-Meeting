@@ -4,7 +4,7 @@
 const INITIAL_STATE = {
   orgName: '',
   meetingDate: '',
-  meetingType: 'Regular Board Meeting',
+  meetingType: 'BOARD OF DIRECTORS MEETING',
   meetingLocation: '',
   meetingAddress: '',
   timeCalled: '',
@@ -66,7 +66,7 @@ document.addEventListener('DOMContentLoaded', () => {
   startClock();
 
   if (!state.meetingDate) {
-    const today = new Date().toISOString().split('T')[0];
+    const today = getLocalDateInputValue();
     state.meetingDate = today;
     document.getElementById('meeting-date').value = today;
     persist();
@@ -237,10 +237,6 @@ function bindGlobalDictationEvents() {
     const field = getEligibleDictationField(event.target);
     if (!field) return;
     if (speechState.buttonEl?.contains(event.relatedTarget)) return;
-    if (speechState.activeField === field) {
-      stopGlobalDictation('Dictation stopped after leaving the field.');
-      return;
-    }
     if (document.activeElement === field) return;
     scheduleDictationHideIfIdle();
   });
@@ -605,7 +601,7 @@ function renderRoster() {
       <td><input type="text" value="${esc(member.name)}" placeholder="Full Name" oninput="updateRosterField('${member.id}','name',this.value)"></td>
       <td>
         <select oninput="updateRosterField('${member.id}','role',this.value)">
-          ${['President', 'Vice President', 'Secretary', 'Treasurer', 'Director / Member at Large', 'Property Manager']
+          ${['President', 'Vice President', 'Secretary', 'Treasurer', 'Board Member', 'Property Manager']
             .map((role) => `<option ${member.role === role ? 'selected' : ''}>${role}</option>`)
             .join('')}
         </select>
@@ -1050,7 +1046,7 @@ function generateMinutes() {
   syncFormValues();
   const org = state.orgName || '[HOA NAME]';
   const date = state.meetingDate ? formatDate(state.meetingDate) : '[DATE]';
-  const type = state.meetingType || 'Regular Board Meeting';
+  const type = state.meetingType || 'BOARD OF DIRECTORS MEETING';
   const location = state.meetingLocation || state.meetingAddress || '[LOCATION]';
   const timeCalled = state.timeCalled ? fmt12(state.timeCalled) : '[TIME]';
   const timeAdjourned = state.timeAdjourned ? fmt12(state.timeAdjourned) : '[TIME]';
@@ -1232,7 +1228,7 @@ function loadFromStorage() {
 function renderAll() {
   document.getElementById('org-name').value = state.orgName || '';
   document.getElementById('meeting-date').value = state.meetingDate || '';
-  document.getElementById('meeting-type').value = state.meetingType || 'Regular Board Meeting';
+  document.getElementById('meeting-type').value = state.meetingType || 'BOARD OF DIRECTORS MEETING';
   document.getElementById('meeting-location').value = state.meetingLocation || '';
   document.getElementById('meeting-address').value = state.meetingAddress || '';
   document.getElementById('time-called').value = state.timeCalled || '';
@@ -1253,7 +1249,7 @@ function saveData() {
   const blob = new Blob([data], { type: 'application/json' });
   const anchor = document.createElement('a');
   anchor.href = URL.createObjectURL(blob);
-  const dateStr = state.meetingDate || new Date().toISOString().split('T')[0];
+  const dateStr = state.meetingDate || getLocalDateInputValue();
   anchor.download = `hoa-meeting-${dateStr}.json`;
   anchor.click();
 }
@@ -1275,7 +1271,7 @@ function clearMeeting() {
   recordingState.activeDiscussionId = null;
 
   state = createInitialState();
-  const today = new Date().toISOString().split('T')[0];
+  const today = getLocalDateInputValue();
   state.meetingDate = today;
 
   localStorage.removeItem('hoa_meeting_state');
@@ -1317,7 +1313,13 @@ function uid() {
 }
 
 function currentTime() {
-  return new Date().toTimeString().slice(0, 5);
+  const now = new Date();
+  return `${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}`;
+}
+
+function getLocalDateInputValue() {
+  const now = new Date();
+  return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
 }
 
 function isTimeField(field) {

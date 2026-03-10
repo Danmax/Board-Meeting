@@ -197,8 +197,10 @@
   /* ===== PRINT ===== */
   @media print {
     body { background: #fff; font-size: 12pt; }
-    #app > *:not(#print-area) { display: none !important; }
-    #print-area { display: block !important; }
+    #app, #app * { visibility: hidden; }
+    #tab-minutes, #tab-minutes * { visibility: visible; }
+    #tab-minutes { display: block !important; }
+    #print-area { display: block !important; position: absolute; left: 0; top: 0; width: 100%; }
     #minutes-preview { border: none; padding: 0; box-shadow: none; }
     .no-print { display: none !important; }
     @page { margin: 1in; size: letter; }
@@ -278,7 +280,7 @@
         <div class="form-group">
           <label>Meeting Type</label>
           <select id="meeting-type">
-            <option>Regular Board Meeting</option>
+            <option>BOARD OF DIRECTORS MEETING</option>
             <option>Special Board Meeting</option>
             <option>Annual Meeting</option>
             <option>Executive Session</option>
